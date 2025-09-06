@@ -368,3 +368,167 @@ func TestNullableIDDatabaseOperations(t *testing.T) {
 		t.Error("Scanning nil should result in invalid NullableID")
 	}
 }
+
+func TestRealUUIDPairs(t *testing.T) {
+	testPairs := []struct {
+		uuidStr   string
+		shortUUID string
+	}{
+		{"8eca1fe1-a833-4de0-b487-b54785cc656e", "TR7kT7YgYjHN5ET8Yagssh"},
+		{"dbf0e6e9-412d-4789-8042-b35d88d5fe80", "h9YNy27x6xdsqHTjMouA6s"},
+		{"47934534-601a-4ea2-9f35-28d761dbe417", "EjtEAyHfuns4hG3SwZKMhc"},
+		{"10fd962b-efd3-4725-b556-9a7caad7a40e", "53Kg5b2NMsBvKw8net9Mss"},
+		{"00000000-0000-0000-0000-000000000000", "2222222222222222222222"},
+	}
+
+	for _, pair := range testPairs {
+		t.Run(pair.uuidStr, func(t *testing.T) {
+			// Test UUID string -> ID -> shortuuid string
+			id, err := FromString(pair.uuidStr)
+			if err != nil {
+				t.Fatalf("FromString failed for %s: %v", pair.uuidStr, err)
+			}
+			
+			shortStr := id.ShortString()
+			if shortStr != pair.shortUUID {
+				t.Errorf("Expected short UUID %s, got %s", pair.shortUUID, shortStr)
+			}
+			
+			// Test shortuuid string -> ID -> UUID string
+			parsedID, err := Parse(pair.shortUUID)
+			if err != nil {
+				t.Fatalf("Parse failed for %s: %v", pair.shortUUID, err)
+			}
+			
+			uuidStr := parsedID.String()
+			if uuidStr != pair.uuidStr {
+				t.Errorf("Expected UUID %s, got %s", pair.uuidStr, uuidStr)
+			}
+			
+			// Verify both IDs are equal
+			if !id.Equal(parsedID) {
+				t.Error("IDs from UUID and shortuuid should be equal")
+			}
+		})
+	}
+}
+
+func TestRealUUIDPairsJSON(t *testing.T) {
+	testPairs := []struct {
+		uuidStr   string
+		shortUUID string
+	}{
+		{"8eca1fe1-a833-4de0-b487-b54785cc656e", "TR7kT7YgYjHN5ET8Yagssh"},
+		{"dbf0e6e9-412d-4789-8042-b35d88d5fe80", "h9YNy27x6xdsqHTjMouA6s"},
+		{"47934534-601a-4ea2-9f35-28d761dbe417", "EjtEAyHfuns4hG3SwZKMhc"},
+		{"10fd962b-efd3-4725-b556-9a7caad7a40e", "53Kg5b2NMsBvKw8net9Mss"},
+		{"00000000-0000-0000-0000-000000000000", "2222222222222222222222"},
+	}
+
+	for _, pair := range testPairs {
+		t.Run(pair.uuidStr, func(t *testing.T) {
+			id, err := FromString(pair.uuidStr)
+			if err != nil {
+				t.Fatalf("FromString failed: %v", err)
+			}
+			
+			// Test JSON marshaling - should produce shortuuid
+			jsonData, err := json.Marshal(id)
+			if err != nil {
+				t.Fatalf("JSON marshal failed: %v", err)
+			}
+			
+			var marshaledShort string
+			err = json.Unmarshal(jsonData, &marshaledShort)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal JSON as string: %v", err)
+			}
+			
+			if marshaledShort != pair.shortUUID {
+				t.Errorf("Expected marshaled JSON to contain %s, got %s", pair.shortUUID, marshaledShort)
+			}
+			
+			// Test JSON unmarshaling - should decode shortuuid back to UUID
+			var unmarshaledID ID
+			err = json.Unmarshal(jsonData, &unmarshaledID)
+			if err != nil {
+				t.Fatalf("JSON unmarshal failed: %v", err)
+			}
+			
+			if !id.Equal(unmarshaledID) {
+				t.Error("JSON round-trip should preserve ID")
+			}
+			
+			if unmarshaledID.String() != pair.uuidStr {
+				t.Errorf("Expected UUID %s after unmarshaling, got %s", pair.uuidStr, unmarshaledID.String())
+			}
+		})
+	}
+}
+
+func TestRealUUIDPairsDatabase(t *testing.T) {
+	testPairs := []struct {
+		uuidStr   string
+		shortUUID string
+	}{
+		{"8eca1fe1-a833-4de0-b487-b54785cc656e", "TR7kT7YgYjHN5ET8Yagssh"},
+		{"dbf0e6e9-412d-4789-8042-b35d88d5fe80", "h9YNy27x6xdsqHTjMouA6s"},
+		{"47934534-601a-4ea2-9f35-28d761dbe417", "EjtEAyHfuns4hG3SwZKMhc"},
+		{"10fd962b-efd3-4725-b556-9a7caad7a40e", "53Kg5b2NMsBvKw8net9Mss"},
+		{"00000000-0000-0000-0000-000000000000", "2222222222222222222222"},
+	}
+
+	for _, pair := range testPairs {
+		t.Run(pair.uuidStr, func(t *testing.T) {
+			id, err := FromString(pair.uuidStr)
+			if err != nil {
+				t.Fatalf("FromString failed: %v", err)
+			}
+			
+			// Test database Value() - should produce UUID string
+			value, err := id.Value()
+			if err != nil {
+				t.Fatalf("Value() failed: %v", err)
+			}
+			
+			valueStr, ok := value.(string)
+			if !ok {
+				t.Fatalf("Expected Value() to return string, got %T", value)
+			}
+			
+			if valueStr != pair.uuidStr {
+				t.Errorf("Expected Value() to return %s, got %s", pair.uuidStr, valueStr)
+			}
+			
+			// Test database Scan() - should parse UUID string back to ID
+			var scannedID ID
+			err = scannedID.Scan(value)
+			if err != nil {
+				t.Fatalf("Scan() failed: %v", err)
+			}
+			
+			if !id.Equal(scannedID) {
+				t.Error("Database round-trip should preserve ID")
+			}
+			
+			if scannedID.String() != pair.uuidStr {
+				t.Errorf("Expected UUID %s after scanning, got %s", pair.uuidStr, scannedID.String())
+			}
+			
+			if scannedID.ShortString() != pair.shortUUID {
+				t.Errorf("Expected short UUID %s after scanning, got %s", pair.shortUUID, scannedID.ShortString())
+			}
+			
+			// Test scanning as []byte (common database driver behavior)
+			var scannedID2 ID
+			err = scannedID2.Scan([]byte(pair.uuidStr))
+			if err != nil {
+				t.Fatalf("Scan([]byte) failed: %v", err)
+			}
+			
+			if !id.Equal(scannedID2) {
+				t.Error("Database []byte round-trip should preserve ID")
+			}
+		})
+	}
+}
